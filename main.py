@@ -4,6 +4,7 @@
 
 import pygame
 import sys
+import time
 
 # Initialize Pygame
 pygame.init()
@@ -14,6 +15,10 @@ RINK_WIDTH, RINK_HEIGHT = 600, 300
 WIDTH_MARGIN, HEIGHT_MARGIN = SCREEN_WIDTH - RINK_WIDTH, SCREEN_HEIGHT - RINK_HEIGHT
 PLAYER_RADIUS = 5
 PUCK_RADIUS = 4
+
+# Puck status
+PUCK_ACQUIRED = False
+PUCK_SLIDE = False
 
 # Colors
 WHITE = (255, 255, 255)
@@ -26,10 +31,12 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Hocky - The Immersive Ice Hockey Game")
 
 # Define player properties
-player_pos = [SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 10, 20]
+player_pos = [SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2, 10, 20]
 player_speed = 5
 
+# Define puck properties
 puck_pos = [SCREEN_WIDTH // 2 + 1, SCREEN_HEIGHT // 2]
+puck_speed = 10
 
 # Game loop
 running = True
@@ -56,17 +63,40 @@ while running:
         player_pos[1] += player_speed
         player_pos[2] = 20
         player_pos[3] = 10
+    if PUCK_ACQUIRED and keys[pygame.K_SPACE]:
+        # Slapshot:
+        puck_pos[0] += puck_speed
+        PUCK_ACQUIRED = False
+        PUCK_SLIDE = True
+    
+    # Handle puck movement
+    if player_pos[0] in range(puck_pos[0]-10,puck_pos[0]+10) and player_pos[1] in range(puck_pos[1]-10,puck_pos[1]+10):
+        puck_pos[0] = player_pos[0]
+        puck_pos[1] = player_pos[1]
+        PUCK_ACQUIRED = True
+
+    if PUCK_SLIDE:
+        for i in range(puck_speed):
+            puck_pos[0] += i
+            pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
+            pygame.display.flip()
+        PUCK_SLIDE = False
 
     # Ensure player stays within rink boundaries
     player_pos[0] = max(WIDTH_MARGIN // 2 + PLAYER_RADIUS, min(SCREEN_WIDTH - WIDTH_MARGIN // 2 - PLAYER_RADIUS - 20, player_pos[0]))
     player_pos[1] = max(HEIGHT_MARGIN // 2 + PLAYER_RADIUS, min(SCREEN_HEIGHT - HEIGHT_MARGIN // 2 - PLAYER_RADIUS - 20, player_pos[1]))
+
+    # Ensure puck stays within rink boundaries
+    puck_pos[0] = max(WIDTH_MARGIN // 2 + PUCK_RADIUS, min(SCREEN_WIDTH - WIDTH_MARGIN // 2 - PUCK_RADIUS - 20, puck_pos[0]))
+    puck_pos[1] = max(HEIGHT_MARGIN // 2 + PUCK_RADIUS, min(SCREEN_HEIGHT - HEIGHT_MARGIN // 2 - PUCK_RADIUS - 20, puck_pos[1]))
 
     # Clear the screen
     screen.fill(WHITE)
 
     # Player coords on screen:
     font = pygame.font.Font('freesansbold.ttf', 14)
-    text = font.render(str(player_pos[0]) + "," + str(player_pos[1]), True, BLACK)
+    text = font.render("Player:" + str(player_pos[0]) + ","
+                       + str(player_pos[1]) + " | " + "Puck:" + str(puck_pos[0]) + "," + str(puck_pos[1]), True, BLACK)
     textRect = text.get_rect()
     screen.blit(text, textRect)
 
