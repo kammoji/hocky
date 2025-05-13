@@ -1,8 +1,10 @@
-# hocky
-Completely immersive ice hockey game with Python
+# Hocky
+A completely immersive ice hockey game with Python
 
-# Requirements
+![alt text](img/hocky.png "Hocky")
+
+## Requirements
 Linux, pygame
 
-# License
+## License
 GPLv3.0
