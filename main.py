@@ -40,12 +40,12 @@ def goal(puck_pos):
     # goal check logic
     global goals_blue,goals_red
 
-    if puck_pos[0] in range(700,775) and puck_pos[1] in range(180,215):
+    if puck_pos[0] in range(700,720) and puck_pos[1] in range(183,217):
         #Goal team Blue!
         goal_horn()
         goals_blue += 1
         return True
-    if puck_pos[0] in range(25,100) and puck_pos[1] in range(180,215):
+    if puck_pos[0] in range(80,100) and puck_pos[1] in range(183,217):
         #Goal team Red!
         goal_horn()
         goals_red += 1
@@ -76,6 +76,7 @@ PUCK_SLIDE = False
 
 # Goal stuff
 GOAL_WAIT_INTERVAL = 2 # seconds
+QUIT_WAIT_INTERVAL = 1 # seconds
 
 # Colors
 WHITE = (255, 255, 255)
@@ -99,7 +100,7 @@ opponent_heading = 270 #opponent heading in degrees
 
 # Define puck properties
 puck_pos = [SCREEN_WIDTH // 2 + 1, SCREEN_HEIGHT // 2]
-puck_speed = 30
+puck_speed = 20
 
 # Goals:
 global goals_blue
@@ -114,6 +115,10 @@ while running:
     keys = pygame.key.get_pressed()
     for event in event_list:
         if event.type == pygame.QUIT:
+            pygame.mixer.Channel(2).play(pygame.mixer.Sound("sfx/chime.mp3"))
+            start = time()
+            while time() - start <= QUIT_WAIT_INTERVAL:
+                pass # time
             running = False
 
 # Handle player movement   
@@ -175,9 +180,17 @@ while running:
         PUCK_ACQUIRED = True
 
     if PUCK_SLIDE:
-        for i in range(puck_speed, 0, -5):
-            print(str(player_heading))
+        for i in range(puck_speed, 0, -2):
             move_puck(puck_pos, i, player_heading)
+            # Puck has slid, need to check goal condition and if needed return puck to center!
+            if goal(puck_pos):
+                start = time()
+                while time() - start <= GOAL_WAIT_INTERVAL:
+                    pass # time
+                puck_pos = [SCREEN_WIDTH // 2 + 1, SCREEN_HEIGHT // 2]
+                player_pos = [SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2, 10, 20]
+                PUCK_SLIDE = False
+                break
             pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
             pygame.display.flip()
         PUCK_SLIDE = False
@@ -202,7 +215,7 @@ while running:
     # Clear the screen
     screen.fill(WHITE)
 
-    # Player coords on screen:
+    # DEBUG: Player coords and heading on screen:
     #font = pygame.font.Font('freesansbold.ttf', 14)
     #text = font.render("Player:" + str(player_pos[0]) + ","
     #                    + str(player_pos[1]) + " | " + "Puck:" + str(puck_pos[0]) + "," + str(puck_pos[1]) + " | Hdg: " + str(player_heading), True, BLACK)
