@@ -184,6 +184,8 @@ while running:
             move_puck(puck_pos, i, player_heading)
             # Puck has slid, need to check goal condition and if needed return puck to center!
             if goal(puck_pos):
+                pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
+                pygame.display.flip()
                 start = time()
                 while time() - start <= GOAL_WAIT_INTERVAL:
                     pass # time
