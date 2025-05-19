@@ -8,6 +8,8 @@ From an ice hockey fan to ice hockey fans :) !
 ## Requirements
 Linux, Python (3), pygame
 
+Optional: pygbag (for WebAssembly development)
+
 ## License
 GPLv3.0
 

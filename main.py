@@ -8,28 +8,24 @@ import asyncio  # for WebAssembly with pygbag
 from time import time
 
 
-def goal(puck_pos):
+async def goal(puck_pos):
     # goal check logic
     global goals_blue, goals_red
 
     if puck_pos[0] in range(700, 715) and puck_pos[1] in range(183, 217):
         # Goal team Blue!
-        goal_horn()
+        pygame.mixer.Channel(1).play(pygame.mixer.Sound("sfx/goal_horn.mp3"))
         goals_blue += 1
         return True
     if puck_pos[0] in range(85, 100) and puck_pos[1] in range(183, 217):
         # Goal team Red!
-        goal_horn()
+        pygame.mixer.Channel(1).play(pygame.mixer.Sound("sfx/goal_horn.mp3"))
         goals_red += 1
         return True
     return False
 
 
-def goal_horn():
-    pygame.mixer.Channel(1).play(pygame.mixer.Sound("sfx/goal_horn.mp3"))
-
-
-def move_puck(puck_pos, speed, heading):
+async def move_puck(puck_pos, speed, heading):
     if heading == 0:  # heading is UP (0/360 degrees)
         # for step in range(puck_speed):
         puck_pos[1] -= speed
@@ -84,7 +80,7 @@ async def main():  # async for WebAssembly
     PUCK_SLIDE = False
 
     # Goal stuff
-    GOAL_WAIT_INTERVAL = 2  # seconds
+    GOAL_WAIT_INTERVAL = 1.5  # seconds
     QUIT_WAIT_INTERVAL = 1  # seconds
 
     # Colors
@@ -178,7 +174,7 @@ async def main():  # async for WebAssembly
         if PLAYER_HAS_PUCK and keys[pygame.K_SPACE]:
             # Slapshot:
             pygame.mixer.Channel(0).play(pygame.mixer.Sound("sfx/slapshot.mp3"))
-            move_puck(puck_pos, puck_speed, player_heading)
+            await move_puck(puck_pos, puck_speed, player_heading)
             PLAYER_HAS_PUCK = False
             PUCK_SLIDE = True
 
@@ -200,9 +196,9 @@ async def main():  # async for WebAssembly
 
         if PUCK_SLIDE:
             for i in range(puck_speed, 0, -2):
-                move_puck(puck_pos, i, player_heading)
+                await move_puck(puck_pos, i, player_heading)
                 # Puck has slid, need to check goal condition and if needed return puck to center!
-                if goal(puck_pos):
+                if await goal(puck_pos):
                     pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
                     pygame.display.flip()
                     start = time()
@@ -218,7 +214,7 @@ async def main():  # async for WebAssembly
             PUCK_SLIDE = False
 
         # Puck has moved, need to check goal condition and return puck to center!
-        if goal(puck_pos):
+        if await goal(puck_pos):
             start = time()
             while time() - start <= GOAL_WAIT_INTERVAL:
                 pass  # time
@@ -250,7 +246,7 @@ async def main():  # async for WebAssembly
             if opponent_pos[0] < 140:
                 # slapshot:
                 pygame.mixer.Channel(0).play(pygame.mixer.Sound("sfx/slapshot.mp3"))
-                move_puck(puck_pos, puck_speed, opponent_heading)
+                await move_puck(puck_pos, puck_speed, opponent_heading)
                 OPPONENT_HAS_PUCK = False
                 PUCK_SLIDE = True
 
