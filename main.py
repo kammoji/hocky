@@ -8,7 +8,7 @@ import asyncio  # for WebAssembly with pygbag
 from time import time
 
 
-async def goal(puck_pos):
+def goal(puck_pos):
     # goal check logic
     global goals_blue, goals_red
 
@@ -54,6 +54,7 @@ async def move_puck(puck_pos, speed, heading):
         # for step in range(puck_speed):
         puck_pos[0] -= speed // 2
         puck_pos[1] -= speed // 2
+    await asyncio.sleep(0)
 
 
 # Initialize Pygame
@@ -196,25 +197,25 @@ async def main():  # async for WebAssembly
 
         if PUCK_SLIDE:
             for i in range(puck_speed, 0, -2):
-                await move_puck(puck_pos, i, player_heading)
-                # Puck has slid, need to check goal condition and if needed return puck to center!
-                if await goal(puck_pos):
+                if PUCK_SLIDE:
+                    await move_puck(puck_pos, i, player_heading)
+                    # Puck has slid, need to check goal condition and if needed return puck to center!
+                    if goal(puck_pos):
+                        pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
+                        pygame.display.update(pygame.Rect(100, 100, puck_pos[0], puck_pos[1]))
+                        start = time()
+                        while time() - start <= GOAL_WAIT_INTERVAL:
+                            pass  # time
+                        puck_pos = [SCREEN_WIDTH // 2 + 1, SCREEN_HEIGHT // 2]
+                        player_pos = [SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2, 10, 20]
+                        opponent_pos = [SCREEN_WIDTH // 2 + 10, SCREEN_HEIGHT // 2, 10, 20]
+                        PUCK_SLIDE = False
                     pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
-                    pygame.display.flip()
-                    start = time()
-                    while time() - start <= GOAL_WAIT_INTERVAL:
-                        pass  # time
-                    puck_pos = [SCREEN_WIDTH // 2 + 1, SCREEN_HEIGHT // 2]
-                    player_pos = [SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2, 10, 20]
-                    opponent_pos = [SCREEN_WIDTH // 2 + 10, SCREEN_HEIGHT // 2, 10, 20]
-                    PUCK_SLIDE = False
-                    break
-                pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
-                pygame.display.flip()
+                    pygame.display.update(pygame.Rect(100, 100, puck_pos[0], puck_pos[1]))
             PUCK_SLIDE = False
 
         # Puck has moved, need to check goal condition and return puck to center!
-        if await goal(puck_pos):
+        if goal(puck_pos):
             start = time()
             while time() - start <= GOAL_WAIT_INTERVAL:
                 pass  # time
