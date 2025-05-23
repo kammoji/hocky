@@ -90,6 +90,9 @@ async def main():  # async for WebAssembly
     RED = (255, 0, 0)
     BLACK = (0, 0, 0)
 
+    # START DEMO STUFF:
+    DONE = False
+
     # Create the screen
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Hocky - The Immersive Ice Hockey Game")
@@ -281,6 +284,7 @@ async def main():  # async for WebAssembly
 
         # Score on top:
         font = pygame.font.Font("freesansbold.ttf", 28)
+        font2 = pygame.font.Font("freesansbold.ttf", 62)
         text = font.render(str(goals_blue) + " - " + str(goals_red), True, BLACK)
         score_rect = text.get_rect(center=(SCREEN_WIDTH / 2, 25))
         screen.blit(text, score_rect)
@@ -295,6 +299,59 @@ async def main():  # async for WebAssembly
         goal_height = 50
         pygame.draw.rect(screen, RED, [(SCREEN_WIDTH - RINK_WIDTH) // 2 - 5, (SCREEN_HEIGHT - goal_height) // 2, 5, goal_height])
         pygame.draw.rect(screen, RED, [(SCREEN_WIDTH + RINK_WIDTH) // 2, (SCREEN_HEIGHT - goal_height) // 2, 5, goal_height])
+
+        # Start demo (bouncing Hocky text):
+        # Loop until the user clicks the start button.
+
+        # Used to manage how fast the screen updates
+        clock = pygame.time.Clock()
+
+        # Starting position of the rectangle
+        rect_x = 50
+        rect_y = 50
+
+        # Speed and direction of rectangle
+        rect_change_x = 2
+        rect_change_y = 2
+
+        # -------- Demo Loop -----------
+        while not DONE:
+            # --- Event Processing
+            event_list = pygame.event.get()
+            for event in event_list:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                    pygame.mixer.Channel(2).play(pygame.mixer.Sound("sfx/chime.mp3"))
+                    start = time()
+                    while time() - start <= GOAL_WAIT_INTERVAL:
+                        pass  # time
+                    DONE = True
+
+            # --- Logic
+            # Move the rectangle starting point
+            rect_x += rect_change_x
+            rect_y += rect_change_y
+
+            # Bounce the ball if needed
+            if rect_y > SCREEN_HEIGHT - 50 or rect_y < 0:
+                rect_change_y = rect_change_y * -1
+            if rect_x > SCREEN_WIDTH - 220 or rect_x < 0:
+                rect_change_x = rect_change_x * -1
+            # Clear the screen
+            screen.fill(WHITE)
+            # Draw the rectangle
+            text2 = font2.render("HOCKY", True, BLACK)
+            text3 = font.render("Hit SPACE bar to start!", True, BLACK)
+            rect = pygame.Rect(rect_x, rect_y, 50, 50)
+            prompt_rect = text3.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20))
+            screen.blit(text2, rect)
+            screen.blit(text3, prompt_rect)
+
+            # --- Wrap-up
+            clock.tick(60)
+
+            # Roll text!:
+            pygame.display.flip()
+            await asyncio.sleep(0)
 
         # Draw the player
         pygame.draw.ellipse(screen, BLUE, player_pos, PLAYER_RADIUS)
