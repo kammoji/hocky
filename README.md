@@ -1,9 +1,12 @@
 # Hocky
 A completely immersive ice hockey game with Python
 
-To all ice hockey fans - from an ice hockey fan :) !
+From an ice hockey fan, to all ice hockey fans :) !
 
 ![alt text](img/hocky.png "Hocky")
+
+## Try Online!
+[https://konekettu.fi/hockey](https://konekettu.fi/hockey)
 
 ## Requirements
 Linux, Python (3), pygame

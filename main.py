@@ -18,28 +18,60 @@ PUCK_RADIUS = 4
 
 # Goal Dimensions (Add these!)
 GOAL_HEIGHT = 50
-GOAL_TOP = (SCREEN_HEIGHT - GOAL_HEIGHT) // 2
-GOAL_BOTTOM = (SCREEN_HEIGHT + GOAL_HEIGHT) // 2
+GOAL_TOP = (RINK_HEIGHT - GOAL_HEIGHT) // 2
+GOAL_BOTTOM = GOAL_TOP + GOAL_HEIGHT
 
 # Rink Edges (Makes your bounce/goal code much cleaner)
-RINK_LEFT = WIDTH_MARGIN // 2
-RINK_RIGHT = SCREEN_WIDTH - WIDTH_MARGIN // 2
-RINK_TOP = HEIGHT_MARGIN // 2
-RINK_BOTTOM = SCREEN_HEIGHT - HEIGHT_MARGIN // 2
+RINK_LEFT = 0
+RINK_RIGHT = RINK_WIDTH
+RINK_TOP = 0
+RINK_BOTTOM = RINK_HEIGHT
+
+# Virtual Controls Config
+JOYSTICK_X, JOYSTICK_Y = 150, 450
+JOYSTICK_RADIUS = 60
+
+FIRE_BTN_X, FIRE_BTN_Y = 650, 450  # Adjusted for typical mobile landscape
+FIRE_BTN_RADIUS = 70
 
 
-def goal(puck_pos):
+def draw_fire_button(screen, text=None):
+    # 1. Draw the translucent red circle
+    fire_surf = pygame.Surface((FIRE_BTN_RADIUS * 2, FIRE_BTN_RADIUS * 2), pygame.SRCALPHA)
+    pygame.draw.circle(fire_surf, (255, 0, 0, 180), (FIRE_BTN_RADIUS, FIRE_BTN_RADIUS), FIRE_BTN_RADIUS)
+
+    # 2. Add text if provided (e.g., "START" or "TULI")
+    if text:
+        # Use whatever font you already have loaded
+        font = pygame.font.SysFont("Arial", 30, bold=True)
+        text_surf = font.render(text, True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=(FIRE_BTN_RADIUS, FIRE_BTN_RADIUS))
+        fire_surf.blit(text_surf, text_rect)
+
+    # 3. Blit to the main screen
+    screen.blit(fire_surf, (FIRE_BTN_X - FIRE_BTN_RADIUS, FIRE_BTN_Y - FIRE_BTN_RADIUS))
+
+
+def goal(puck_pos, off_x, off_y):
     global goals_blue, goals_red
 
-    # Goal Team Blue (Right side)
-    # Using the RINK_RIGHT and GOAL_TOP/BOTTOM constants you defined at the top
-    if puck_pos[0] >= RINK_RIGHT and GOAL_TOP <= puck_pos[1] <= GOAL_BOTTOM:
+    # 1. Calculate the dynamic Goal Y boundaries
+    # This must match your drawing logic: OFFSET_Y + (RINK_HEIGHT - GOAL_HEIGHT) // 2
+    g_top = off_y + (RINK_HEIGHT - GOAL_HEIGHT) // 2
+    g_bottom = g_top + GOAL_HEIGHT
+
+    # 2. Calculate dynamic X boundaries
+    g_left_x = off_x
+    g_right_x = off_x + RINK_WIDTH
+
+    # Goal Team Blue (Scores in Right Goal)
+    if puck_pos[0] + off_x >= g_right_x and g_top <= puck_pos[1] + off_y <= g_bottom:
         pygame.mixer.Channel(1).play(pygame.mixer.Sound("sfx/goal_horn.mp3"))
         goals_blue += 1
         return True
 
-    # Goal Team Red (Left side)
-    if puck_pos[0] <= RINK_LEFT and GOAL_TOP <= puck_pos[1] <= GOAL_BOTTOM:
+    # Goal Team Red (Scores in Left Goal)
+    if puck_pos[0] + off_x <= g_left_x and g_top <= puck_pos[1] + off_y <= g_bottom:
         pygame.mixer.Channel(1).play(pygame.mixer.Sound("sfx/goal_horn.mp3"))
         goals_red += 1
         return True
@@ -47,39 +79,51 @@ def goal(puck_pos):
     return False
 
 
-# async def move_puck(puck_pos, speed, heading, slide):
-#    if heading == 0:  # heading is UP (0/360 degrees)
-#        # for step in range(puck_speed):
-#        puck_pos[1] -= speed
-#    if heading == 45:
-#        # for step in range(puck_speed):
-#        puck_pos[0] += speed // 2
-#        puck_pos[1] -= speed  // 2
-#    if heading == 90:
-#        # for step in range(puck_speed):
-#        puck_pos[0] += speed
-#    if heading == 135:
-#        # for step in range(puck_speed):
-#        puck_pos[0] += speed // 2
-#        puck_pos[1] += speed // 2
-#    if heading == 180:
-#        # for step in range(puck_speed):
-#        puck_pos[1] += speed
-#    if heading == 225:
-#        # for step in range(puck_speed):
-#        puck_pos[0] -= speed // 2
-#        puck_pos[1] += speed // 2
-#    if heading == 270:
-#        # for step in range(puck_speed):
-#        puck_pos[0] -= speed
-#    if heading == 315:
-#        # for step in range(puck_speed):
-#        puck_pos[0] -= speed // 2
-#        puck_pos[1] -= speed // 2
-#    speed -= 2
-#    if slide and speed > 0:
-#        await move_puck(puck_pos, speed, heading, slide)
-#    await asyncio.sleep(0)
+class VirtualJoystick:
+    def __init__(self, x, y, radius=50):
+        self.base_pos = (x, y)
+        self.knob_pos = (x, y)
+        self.radius = radius
+        self.active = False
+        self.vector = [0, 0]  # This will replace your arrow keys
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.FINGERDOWN:
+            pos = getattr(event, "pos", (0, 0))
+            if math.hypot(pos[0] - self.base_pos[0], pos[1] - self.base_pos[1]) < self.radius * 2:
+                self.active = True
+
+        elif event.type == pygame.MOUSEBUTTONUP or event.type == pygame.FINGERUP:
+            self.active = False
+            self.knob_pos = self.base_pos
+            self.vector = [0, 0]
+
+        elif (event.type == pygame.MOUSEMOTION or event.type == pygame.FINGERMOTION) and self.active:
+            pos = getattr(event, "pos", (0, 0))
+            dx = pos[0] - self.base_pos[0]
+            dy = pos[1] - self.base_pos[1]
+            dist = math.hypot(dx, dy)
+
+            # Keep knob inside the circle
+            angle = math.atan2(dy, dx)
+            clamped_dist = min(dist, self.radius)
+            self.knob_pos = (self.base_pos[0] + math.cos(angle) * clamped_dist, self.base_pos[1] + math.sin(angle) * clamped_dist)
+
+            # Normalize vector for movement (-1 to 1)
+            self.vector = [math.cos(angle) * (clamped_dist / self.radius), math.sin(angle) * (clamped_dist / self.radius)]
+
+    def draw(self, screen, font, text=None):
+        # 1. Draw the base circle (the grey socket)
+        pygame.draw.circle(screen, (150, 150, 150), self.base_pos, self.radius, 3)
+
+        # 2. Draw the knob (the red handle)
+        pygame.draw.circle(screen, (200, 0, 0), (int(self.knob_pos[0]), int(self.knob_pos[1])), 20)
+
+        # 3. Draw the label (MOVE)
+        if text and font:
+            t_surf = font.render(text, True, (0, 0, 0))  # BLACK for white background
+            t_rect = t_surf.get_rect(center=(self.base_pos[0], self.base_pos[1] - (self.radius + 30)))
+            screen.blit(t_surf, t_rect)
 
 
 # Initialize Pygame
@@ -94,8 +138,9 @@ async def main():  # async for WebAssembly
     pygame.mixer.music.play()
 
     # Define constants
-    SCREEN_WIDTH, SCREEN_HEIGHT = 800, 400
+    SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 600
     RINK_WIDTH, RINK_HEIGHT = 600, 300
+    OFFSET_X = (SCREEN_WIDTH - RINK_WIDTH) // 2
     WIDTH_MARGIN, HEIGHT_MARGIN = SCREEN_WIDTH - RINK_WIDTH, SCREEN_HEIGHT - RINK_HEIGHT
     PLAYER_RADIUS = 5
     PUCK_RADIUS = 4
@@ -122,18 +167,20 @@ async def main():  # async for WebAssembly
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Hocky - The Immersive Ice Hockey Game")
 
-    # Define player properties
-    player_pos = [SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2, 10, 20]
+    # Define player properties (Logic-based center of the ICE)
+    # Start the player on the left side of the center ice
+    player_pos = [RINK_WIDTH // 2 - 40, RINK_HEIGHT // 2, 10, 20]
     player_speed = 5
     player_heading = 90  # player heading in degrees
 
     # Define opponent properties
-    opponent_pos = [SCREEN_WIDTH // 2 + 10, SCREEN_HEIGHT // 2, 10, 20]
+    # Start the opponent on the right side of the center ice
+    opponent_pos = [RINK_WIDTH // 2 + 40, RINK_HEIGHT // 2, 10, 20]
     opponent_speed = 2
     opponent_heading = 270  # opponent heading in degrees
 
     # Define puck properties
-    puck_pos = [SCREEN_WIDTH // 2 + 1, SCREEN_HEIGHT // 2]
+    puck_pos = [RINK_WIDTH // 2, RINK_HEIGHT // 2]
     puck_speed = 10
     puck_vel = [0, 0]  # New: [velocity_x, velocity_y]
     puck_pickup_cooldown = 0  # Frames until you can grab the puck again
@@ -152,16 +199,38 @@ async def main():  # async for WebAssembly
     show_goal_text = False
     goal_text_timer = 0
 
+    joystick = VirtualJoystick(150, 450)
+
+    # Position the fire button in the bottom right
+    fire_button_pos = (SCREEN_WIDTH - 120, SCREEN_HEIGHT - 120)
+    fire_button_radius = 60
+    fire_button_color = (255, 0, 0, 100)  # Semi-transparent Red
+
     # Game loop
     running = True
     while running:
-        # Inside your loop:
+        # Get live screen dimensions every frame for WASM/Mobile safety
+        sw, sh = screen.get_size()
+        OFFSET_X = (sw - RINK_WIDTH) // 2
+        OFFSET_Y = (sh - RINK_HEIGHT) // 2  # Center it vertically too
+
+        # Calculate SAFE positions (180px up from bottom to avoid browser bars)
+        JOY_POS = (100, sh - 180)
+        FIRE_POS = (sw - 100, sh - 180)
+
+        # Update your joystick's internal position to match
+        joystick.base_pos = JOY_POS
+        if not joystick.active:
+            joystick.knob_pos = JOY_POS
+
         if puck_pickup_cooldown > 0:
             puck_pickup_cooldown -= 1
 
         event_list = pygame.event.get()
         keys = pygame.key.get_pressed()
+        mobile_fire_trigger = False
         for event in event_list:
+            joystick.handle_event(event)
             if event.type == pygame.QUIT:
                 pygame.mixer.Channel(2).play(pygame.mixer.Sound("sfx/chime.mp3"))
                 start = time()
@@ -170,51 +239,76 @@ async def main():  # async for WebAssembly
                 running = False
 
         # Handle player movement
-        if keys[pygame.K_LEFT] and not keys[pygame.K_UP] and not keys[pygame.K_DOWN]:
+
+        # Get joystick vector
+        jx, jy = joystick.vector
+
+        # Determine movement from Keys OR Joystick
+        move_left = keys[pygame.K_LEFT] or jx < -0.3
+        move_right = keys[pygame.K_RIGHT] or jx > 0.3
+        move_up = keys[pygame.K_UP] or jy < -0.3
+        move_down = keys[pygame.K_DOWN] or jy > 0.3
+
+        # Slapshot logic (Keys OR Joystick "Fire" button later)
+        # For now, let's say a touch on the right 20% of screen = Space
+        touch_fire = False
+        for event in event_list:
+            if event.type == pygame.FINGERDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+                # Use a distance check (like we did for the joystick)
+                f_pos = getattr(event, "pos", (0, 0))
+                # For pygbag/mobile, multiply normalized coords by screen size
+                if hasattr(event, "x"):
+                    f_pos = (event.x * SCREEN_WIDTH, event.y * SCREEN_HEIGHT)
+
+                dist = math.hypot(f_pos[0] - fire_button_pos[0], f_pos[1] - fire_button_pos[1])
+                if dist < fire_button_radius:
+                    mobile_fire_trigger = True
+
+        if move_left and not move_up and not move_down:
             player_pos[0] -= player_speed
             player_pos[2] = 10
             player_pos[3] = 20
             player_heading = 270
-        if keys[pygame.K_LEFT] and keys[pygame.K_UP]:
+        if move_left and move_up:
             player_pos[0] -= player_speed
             player_pos[1] -= player_speed
             player_pos[2] = 10
             player_pos[3] = 20
             player_heading = 315
-        if keys[pygame.K_RIGHT] and not keys[pygame.K_UP] and not keys[pygame.K_DOWN]:
+        if move_right and not move_up and not move_down:
             player_pos[0] += player_speed
             player_pos[2] = 10
             player_pos[3] = 20
             player_heading = 90
-        if keys[pygame.K_RIGHT] and keys[pygame.K_UP]:
+        if move_right and move_up:
             player_pos[0] += player_speed
             player_pos[1] -= player_speed
             player_pos[2] = 10
             player_pos[3] = 20
             player_heading = 45
-        if keys[pygame.K_UP] and not keys[pygame.K_LEFT] and not keys[pygame.K_RIGHT]:
+        if move_up and not move_left and not move_right:
             player_pos[1] -= player_speed
             player_pos[2] = 20
             player_pos[3] = 10
             player_heading = 0
-        if keys[pygame.K_RIGHT] and keys[pygame.K_DOWN]:
+        if move_right and move_down:
             player_pos[0] += player_speed
             player_pos[1] += player_speed
             player_pos[2] = 10
             player_pos[3] = 20
             player_heading = 135
-        if keys[pygame.K_DOWN] and not keys[pygame.K_LEFT] and not keys[pygame.K_RIGHT]:
+        if move_down and not move_left and not move_right:
             player_pos[1] += player_speed
             player_pos[2] = 20
             player_pos[3] = 10
             player_heading = 180
-        if keys[pygame.K_LEFT] and keys[pygame.K_DOWN]:
+        if move_left and move_down:
             player_pos[0] -= player_speed
             player_pos[1] += player_speed
             player_pos[2] = 10
             player_pos[3] = 20
             player_heading = 225
-        if PLAYER_HAS_PUCK and keys[pygame.K_SPACE]:
+        if PLAYER_HAS_PUCK and (keys[pygame.K_SPACE] or mobile_fire_trigger):
             # Slapshot:
             pygame.mixer.Channel(0).play(pygame.mixer.Sound("sfx/slapshot.mp3"))
             # Transfer the current player heading and a set speed to the puck
@@ -344,7 +438,7 @@ async def main():  # async for WebAssembly
             puck_slide_speed *= 0.98
             if puck_slide_speed < 0.5:
                 PUCK_SLIDE = False
-            if goal(puck_pos):
+            if goal(puck_pos, OFFSET_X, OFFSET_Y):
 
                 # If the puck is on the right side of the rink, Blue scored
                 if puck_pos[0] > SCREEN_WIDTH // 2:
@@ -352,12 +446,13 @@ async def main():  # async for WebAssembly
                 else:
                     scoring_team = RED
 
-                # Instead of 'while time()', just reset immediately
-                # or use an async sleep if you want a pause
-                puck_pos[0] = SCREEN_WIDTH // 2 + 1
-                puck_pos[1] = SCREEN_HEIGHT // 2
-                player_pos[0], player_pos[1] = SCREEN_WIDTH // 2 - 20, SCREEN_HEIGHT // 2
-                opponent_pos[0], opponent_pos[1] = SCREEN_WIDTH // 2 + 10, SCREEN_HEIGHT // 2
+                # 2. Reset positions to the center of the RINK (Internal logic 0-800)
+                puck_pos[0] = RINK_WIDTH // 2
+                puck_pos[1] = RINK_HEIGHT // 2
+
+                # Start players on their respective sides of the CENTER ICE
+                player_pos[0], player_pos[1] = RINK_WIDTH // 2 - 50, RINK_HEIGHT // 2
+                opponent_pos[0], opponent_pos[1] = RINK_WIDTH // 2 + 50, RINK_HEIGHT // 2
                 PUCK_SLIDE = False
                 puck_slide_speed = 0
 
@@ -426,7 +521,10 @@ async def main():  # async for WebAssembly
         # Always clamp Y (Top/Bottom boards)
         puck_pos[1] = max(RINK_TOP + PUCK_RADIUS, min(RINK_BOTTOM - PUCK_RADIUS, puck_pos[1]))
 
-        # Clear the screen
+        # The "Black Bar" size on the left
+        OFFSET_X = (SCREEN_WIDTH - RINK_WIDTH) // 2
+
+        # Clears sidebars:
         screen.fill(WHITE)
 
         # DEBUG: Player coords and heading on screen:
@@ -439,35 +537,33 @@ async def main():  # async for WebAssembly
         # Score on top:
         font = pygame.font.Font("freesansbold.ttf", 28)
         font2 = pygame.font.Font("freesansbold.ttf", 62)
-        text = font.render(str(goals_blue) + " - " + str(goals_red), True, BLACK)
-        score_rect = text.get_rect(center=(SCREEN_WIDTH / 2, 25))
+        text = font2.render(str(goals_blue) + " - " + str(goals_red), True, BLACK)
+        score_rect = text.get_rect(center=(SCREEN_WIDTH / 2, 50))
         screen.blit(text, score_rect)
 
         # Draw the rink
 
         c = 30  # = corner size
 
-        # Define the points for a "rounded" (angular) rink
+        # Apply BOTH offsets to the rink points
         rink_points = [
-            (RINK_LEFT + c, RINK_TOP),  # Top-left start
-            (RINK_RIGHT - c, RINK_TOP),  # Top-right start
-            (RINK_RIGHT, RINK_TOP + c),  # Top-right end
-            (RINK_RIGHT, RINK_BOTTOM - c),  # Bottom-right start
-            (RINK_RIGHT - c, RINK_BOTTOM),  # Bottom-right end
-            (RINK_LEFT + c, RINK_BOTTOM),  # Bottom-left start
-            (RINK_LEFT, RINK_BOTTOM - c),  # Bottom-left end
-            (RINK_LEFT, RINK_TOP + c),  # Top-left end
+            (OFFSET_X + c, OFFSET_Y),
+            (OFFSET_X + RINK_WIDTH - c, OFFSET_Y),
+            (OFFSET_X + RINK_WIDTH, OFFSET_Y + c),
+            (OFFSET_X + RINK_WIDTH, OFFSET_Y + RINK_HEIGHT - c),
+            (OFFSET_X + RINK_WIDTH - c, OFFSET_Y + RINK_HEIGHT),
+            (OFFSET_X + c, OFFSET_Y + RINK_HEIGHT),
+            (OFFSET_X, OFFSET_Y + RINK_HEIGHT - c),
+            (OFFSET_X, OFFSET_Y + c),
         ]
         pygame.draw.polygon(screen, WHITE, rink_points)
 
         # Draw the rink border (Black line, width 3)
         pygame.draw.polygon(screen, BLACK, rink_points, 3)
 
-        # Draw the goals
-        pygame.draw.rect(screen, RED, [(SCREEN_WIDTH - RINK_WIDTH) // 2 - 5, (SCREEN_HEIGHT - GOAL_HEIGHT) // 2, 5, GOAL_HEIGHT])
-        pygame.draw.rect(screen, RED, [(SCREEN_WIDTH + RINK_WIDTH) // 2, (SCREEN_HEIGHT - GOAL_HEIGHT) // 2, 5, GOAL_HEIGHT])
-
-        pygame.draw.circle(screen, BLACK, (int(puck_pos[0]), int(puck_pos[1])), PUCK_RADIUS)
+        # Draw Goals (Centered automatically by OFFSET_Y)
+        pygame.draw.rect(screen, RED, [OFFSET_X - 5, OFFSET_Y + (RINK_HEIGHT - GOAL_HEIGHT) // 2, 5, GOAL_HEIGHT])
+        pygame.draw.rect(screen, RED, [OFFSET_X + RINK_WIDTH, OFFSET_Y + (RINK_HEIGHT - GOAL_HEIGHT) // 2, 5, GOAL_HEIGHT])
 
         # --- Was it a goal? If so, show the text for a brief moment:
         if show_goal_text and goal_text_timer > 0:
@@ -504,15 +600,44 @@ async def main():  # async for WebAssembly
 
         # -------- Demo Loop -----------
         while not DONE:
+            # Force-refresh coordinates
+            sw, sh = screen.get_size()
+            OFFSET_X = (SCREEN_WIDTH - RINK_WIDTH) // 2
+
+            # Move them 250px up from the floor
+            JOY_POS = (100, sh - 250)
+            FIRE_POS = (sw - 100, sh - 250)
+
+            # Re-link the joystick to the new position
+            joystick.base_pos = JOY_POS
+            joystick.knob_pos = JOY_POS
             # --- Event Processing
             event_list = pygame.event.get()
             for event in event_list:
+                # 1. Check for Keyboard Start
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                    start_trigger = True
+
+                # 2. Check for Mobile/Mouse Start (Button Click)
+                elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
+                    f_pos = getattr(event, "pos", (0, 0))
+                    # Pygbag/Mobile normalization
+                    if hasattr(event, "x"):
+                        f_pos = (event.x * SCREEN_WIDTH, event.y * SCREEN_HEIGHT)
+
+                    # FIX: Use FIRE_POS here so it matches the drawing!
+                    dist = math.hypot(f_pos[0] - FIRE_POS[0], f_pos[1] - FIRE_POS[1])
+                    if dist < 80:  # Made the hit-box slightly larger for easier tapping
+                        start_trigger = True
+
+                # Common Start Logic
+                if "start_trigger" in locals() and start_trigger:
                     pygame.mixer.Channel(2).play(pygame.mixer.Sound("sfx/chime.mp3"))
                     start = time()
                     while time() - start <= GOAL_WAIT_INTERVAL:
-                        pass  # time
+                        pass
                     DONE = True
+                    del start_trigger  # Clean up for the next run
 
             # --- Logic
             # Move the rectangle starting point
@@ -528,7 +653,7 @@ async def main():  # async for WebAssembly
             screen.fill(WHITE)
             # Draw the rectangle
             text2 = font2.render("HOCKY", True, BLACK)
-            text3 = font.render("Hit SPACE bar to start!", True, BLACK)
+            text3 = font.render("Hit SPACE bar or punch FIRE to start!", True, BLACK)
             rect = pygame.Rect(rect_x, rect_y, 50, 50)
             prompt_rect = text3.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20))
             screen.blit(text2, rect)
@@ -537,18 +662,54 @@ async def main():  # async for WebAssembly
             # --- Wrap-up
             clock.tick(60)
 
+            joystick.draw(screen, font, "MOVE")
+
+            # 2. Start Button
+            btn_radius = 70  # Make it a bit bigger
+            fire_surf = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(fire_surf, (255, 0, 0, 180), (btn_radius, btn_radius), btn_radius)
+
+            txt_surf = font.render("FIRE", True, (255, 255, 255))
+            txt_rect = txt_surf.get_rect(center=(btn_radius, btn_radius))
+            fire_surf.blit(txt_surf, txt_rect)
+
+            # Center the blit on our FIRE_POS
+            screen.blit(fire_surf, (FIRE_POS[0] - btn_radius, FIRE_POS[1] - btn_radius))
+
             # Roll text!:
             pygame.display.flip()
             await asyncio.sleep(0)
 
-        # Draw the player
-        pygame.draw.ellipse(screen, BLUE, player_pos, PLAYER_RADIUS)
+        # --- 4. DRAW PLAYERS & PUCK (SHIFTED VISUALLY ONLY) ---
+        # Blue Player
+        blue_rect = [player_pos[0] + OFFSET_X, player_pos[1] + OFFSET_Y, player_pos[2], player_pos[3]]
+        pygame.draw.ellipse(screen, BLUE, blue_rect)
 
-        # Draw the opponent
-        pygame.draw.ellipse(screen, RED, opponent_pos, PLAYER_RADIUS)
+        # Red Player
+        red_rect = [opponent_pos[0] + OFFSET_X, opponent_pos[1] + OFFSET_Y, opponent_pos[2], opponent_pos[3]]
+        pygame.draw.ellipse(screen, RED, red_rect)
 
-        # Draw the puck
-        pygame.draw.circle(screen, BLACK, puck_pos, PUCK_RADIUS)
+        # Puck
+        pygame.draw.circle(screen, BLACK, (int(puck_pos[0] + OFFSET_X), int(puck_pos[1] + OFFSET_Y)), PUCK_RADIUS)
+
+        # --- DRAW VIRTUAL CONTROLS ---
+        # 1. Draw Joystick (The class now handles the circle, knob, and "MOVE" text)
+        joystick.draw(screen, font, "MOVE")
+
+        # 2. Draw Fire Button
+        btn_radius = 60
+        fire_surf = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(fire_surf, (255, 0, 0, 150), (btn_radius, btn_radius), btn_radius)
+
+        btn_label = "FIRE"
+
+        # Now render it
+        txt_surf = font.render(btn_label, True, (255, 255, 255))
+        txt_rect = txt_surf.get_rect(center=(btn_radius, btn_radius))
+        fire_surf.blit(txt_surf, txt_rect)
+
+        # Blit centered on the FIRE_POS
+        screen.blit(fire_surf, (FIRE_POS[0] - btn_radius, FIRE_POS[1] - btn_radius))
 
         # Update the display
         pygame.display.flip()
