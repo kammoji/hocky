@@ -29,10 +29,10 @@ RINK_BOTTOM = RINK_HEIGHT
 
 # Virtual Controls Config
 JOYSTICK_X, JOYSTICK_Y = 150, 450
-JOYSTICK_RADIUS = 60
+JOYSTICK_RADIUS = 80
 
 FIRE_BTN_X, FIRE_BTN_Y = 650, 450  # Adjusted for typical mobile landscape
-FIRE_BTN_RADIUS = 70
+FIRE_BTN_RADIUS = 85
 
 
 def draw_fire_button(screen, text=None):
@@ -88,29 +88,39 @@ class VirtualJoystick:
         self.vector = [0, 0]  # This will replace your arrow keys
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.FINGERDOWN:
-            pos = getattr(event, "pos", (0, 0))
+        # 1. Get the correct position regardless of input type
+        pos = None
+        if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+            # Scale normalized 0.0-1.0 to actual pixels
+            pos = (event.x * SCREEN_WIDTH, event.y * SCREEN_HEIGHT)
+        elif hasattr(event, 'pos'):
+            pos = event.pos
+
+        # 2. Logic for DOWN
+        if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN) and pos:
             if math.hypot(pos[0] - self.base_pos[0], pos[1] - self.base_pos[1]) < self.radius * 2:
                 self.active = True
 
-        elif event.type == pygame.MOUSEBUTTONUP or event.type == pygame.FINGERUP:
+        # 3. Logic for UP
+        elif event.type in (pygame.MOUSEBUTTONUP, pygame.FINGERUP):
             self.active = False
             self.knob_pos = self.base_pos
             self.vector = [0, 0]
 
-        elif (event.type == pygame.MOUSEMOTION or event.type == pygame.FINGERMOTION) and self.active:
-            pos = getattr(event, "pos", (0, 0))
+        # 4. Logic for MOTION
+        elif event.type in (pygame.MOUSEMOTION, pygame.FINGERMOTION) and self.active and pos:
             dx = pos[0] - self.base_pos[0]
             dy = pos[1] - self.base_pos[1]
             dist = math.hypot(dx, dy)
 
-            # Keep knob inside the circle
             angle = math.atan2(dy, dx)
             clamped_dist = min(dist, self.radius)
-            self.knob_pos = (self.base_pos[0] + math.cos(angle) * clamped_dist, self.base_pos[1] + math.sin(angle) * clamped_dist)
+            self.knob_pos = (self.base_pos[0] + math.cos(angle) * clamped_dist, 
+                             self.base_pos[1] + math.sin(angle) * clamped_dist)
 
-            # Normalize vector for movement (-1 to 1)
-            self.vector = [math.cos(angle) * (clamped_dist / self.radius), math.sin(angle) * (clamped_dist / self.radius)]
+            self.vector = [math.cos(angle) * (clamped_dist / self.radius), 
+                           math.sin(angle) * (clamped_dist / self.radius)]
+
 
     def draw(self, screen, font, text=None):
         # 1. Draw the base circle (the grey socket)
@@ -199,7 +209,7 @@ async def main():  # async for WebAssembly
     show_goal_text = False
     goal_text_timer = 0
 
-    joystick = VirtualJoystick(150, 450)
+    joystick = VirtualJoystick(150, 450, JOYSTICK_RADIUS)
 
     # Position the fire button in the bottom right
     fire_button_pos = (SCREEN_WIDTH - 120, SCREEN_HEIGHT - 120)
@@ -665,7 +675,7 @@ async def main():  # async for WebAssembly
             joystick.draw(screen, font, "MOVE")
 
             # 2. Start Button
-            btn_radius = 70  # Make it a bit bigger
+            btn_radius = 85  # Make it a bit bigger
             fire_surf = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
             pygame.draw.circle(fire_surf, (255, 0, 0, 180), (btn_radius, btn_radius), btn_radius)
 
