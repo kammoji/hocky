@@ -8,10 +8,13 @@ import sys
 import asyncio  # for WebAssembly with pygbag
 from time import time
 
+# VScode complaint fix
+screen: pygame.Surface = None
+
 # Constants
-SCREEN_WIDTH, SCREEN_HEIGHT = 800, 400
+SCREEN_WIDTH, SCREEN_HEIGHT = 900, 400  # Width increased for control clearance
 RINK_WIDTH, RINK_HEIGHT = 600, 300
-WIDTH_MARGIN = SCREEN_WIDTH - RINK_WIDTH
+WIDTH_MARGIN = SCREEN_WIDTH - RINK_WIDTH  # Now 300px total (150px per side)
 HEIGHT_MARGIN = SCREEN_HEIGHT - RINK_HEIGHT
 PLAYER_RADIUS = 5
 PUCK_RADIUS = 4
@@ -88,18 +91,34 @@ class VirtualJoystick:
         self.vector = [0, 0]  # This will replace your arrow keys
 
     def handle_event(self, event):
-        # 1. Get the correct position regardless of input type
+        # 1. REPLACE your coordinate logic with this:
+        # This gets the REAL size of the canvas as Safari sees it
+        curr_w, curr_h = pygame.display.get_surface().get_size()
+
         pos = None
         if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
-            # Scale normalized 0.0-1.0 to actual pixels
-            pos = (event.x * SCREEN_WIDTH, event.y * SCREEN_HEIGHT)
-        elif hasattr(event, 'pos'):
+            # Use the real canvas size, not the constant SCREEN_WIDTH
+            pos = (event.x * curr_w, event.y * curr_h)
+        elif hasattr(event, "pos"):
             pos = event.pos
 
         # 2. Logic for DOWN
         if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN) and pos:
-            if math.hypot(pos[0] - self.base_pos[0], pos[1] - self.base_pos[1]) < self.radius * 2:
-                self.active = True
+            # OPTION A: Sticky (User must touch near the circle)
+            # if math.hypot(pos[0] - self.base_pos[0], pos[1] - self.base_pos[1]) < self.radius * 2:
+            # 2. Logic for DOWN
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN) and pos:
+                # Use "Option A": Check if the touch is near the fixed joystick position
+                # We use radius * 2 to give the user a larger "hit area" for their thumb
+                if math.hypot(pos[0] - self.base_pos[0], pos[1] - self.base_pos[1]) < self.radius * 2:
+                    self.active = True
+                    # REMOVED: self.base_pos = pos (This was the cause of the jumping)
+            # OPTION B: Dynamic (Better for mobile)
+            # If touch is on the left 40% of the screen, snap joystick to finger
+            # if pos[0] < curr_w * 0.4:
+            #    self.active = True
+            #    self.base_pos = pos # This moves the base to where the finger is
+            #    self.knob_pos = pos
 
         # 3. Logic for UP
         elif event.type in (pygame.MOUSEBUTTONUP, pygame.FINGERUP):
@@ -109,18 +128,19 @@ class VirtualJoystick:
 
         # 4. Logic for MOTION
         elif event.type in (pygame.MOUSEMOTION, pygame.FINGERMOTION) and self.active and pos:
+            # Calculate distance relative to the CURRENT base_pos set in loop
             dx = pos[0] - self.base_pos[0]
             dy = pos[1] - self.base_pos[1]
             dist = math.hypot(dx, dy)
-
             angle = math.atan2(dy, dx)
+
+            # CLAMPING: This keeps the knob inside your 80px radius
             clamped_dist = min(dist, self.radius)
-            self.knob_pos = (self.base_pos[0] + math.cos(angle) * clamped_dist, 
-                             self.base_pos[1] + math.sin(angle) * clamped_dist)
 
-            self.vector = [math.cos(angle) * (clamped_dist / self.radius), 
-                           math.sin(angle) * (clamped_dist / self.radius)]
+            self.knob_pos = (self.base_pos[0] + math.cos(angle) * clamped_dist, self.base_pos[1] + math.sin(angle) * clamped_dist)
 
+            # Normalized vector for player movement (0.0 to 1.0)
+            self.vector = [math.cos(angle) * (clamped_dist / self.radius), math.sin(angle) * (clamped_dist / self.radius)]
 
     def draw(self, screen, font, text=None):
         # 1. Draw the base circle (the grey socket)
@@ -142,13 +162,16 @@ pygame.init()
 
 async def main():  # async for WebAssembly
 
+    global screen
+    font = pygame.font.SysFont("Arial", 24)  # font init
+
     # Face the music!
     pygame.mixer.init()
     pygame.mixer.music.load("music/hocky.mp3")
     pygame.mixer.music.play()
 
     # Define constants
-    SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 600
+    SCREEN_WIDTH, SCREEN_HEIGHT = 1100, 600
     RINK_WIDTH, RINK_HEIGHT = 600, 300
     OFFSET_X = (SCREEN_WIDTH - RINK_WIDTH) // 2
     WIDTH_MARGIN, HEIGHT_MARGIN = SCREEN_WIDTH - RINK_WIDTH, SCREEN_HEIGHT - RINK_HEIGHT
@@ -209,26 +232,61 @@ async def main():  # async for WebAssembly
     show_goal_text = False
     goal_text_timer = 0
 
-    joystick = VirtualJoystick(150, 450, JOYSTICK_RADIUS)
+    # 1. Get the actual rendered dimensions (critical for pygbag/Safari)
+    sw, sh = pygame.display.get_surface().get_size()
+    v_center = sh // 2
 
-    # Position the fire button in the bottom right
-    fire_button_pos = (SCREEN_WIDTH - 120, SCREEN_HEIGHT - 120)
-    fire_button_radius = 60
-    fire_button_color = (255, 0, 0, 100)  # Semi-transparent Red
+    # 2. Setup Joystick (Left side)
+    # Moving to 80px from edge to clear the rink margin (150px)
+    JOYSTICK_RADIUS = 80
+    joystick = VirtualJoystick(80, v_center, JOYSTICK_RADIUS)
 
-    # Game loop
+    # 3. Setup Fire Button (Right side)
+    fire_button_radius = 85
+    # sw - 80 keeps it symmetrical with the joystick
+    fire_button_pos = (sw - 80, v_center)
+    fire_button_color = (255, 0, 0, 150)
+
+    # --- Setup Fire Button Surfaces once ---
+    btn_radius = 85
+    btn_label = "SHOT"
+
+    # NORMAL State
+    fire_surf_normal = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
+    pygame.draw.circle(fire_surf_normal, (200, 0, 0, 180), (btn_radius, btn_radius), btn_radius)
+
+    # PRESSED State
+    fire_surf_pressed = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
+    pygame.draw.circle(fire_surf_pressed, (255, 200, 0, 220), (btn_radius, btn_radius), btn_radius - 5)
+
+    ui_font = pygame.font.SysFont("Arial", 60, bold=True)  # Increased size
+    btn_label = "SHOT"
+    txt_surf = ui_font.render(btn_label, True, (255, 255, 255))
+    txt_rect = txt_surf.get_rect(center=(btn_radius, btn_radius))
+    fire_surf_normal.blit(txt_surf, txt_rect)
+    fire_surf_pressed.blit(txt_surf, txt_rect)
+
+    is_firing = False
     running = True
+
     while running:
-        # Get live screen dimensions every frame for WASM/Mobile safety
+        # 1. Get live dimensions
         sw, sh = screen.get_size()
+        v_center = sh // 2  # This is the "Safe Zone" for mobile thumbs
+
+        # 2. Update Rink Offsets (Centers the ice)
         OFFSET_X = (sw - RINK_WIDTH) // 2
-        OFFSET_Y = (sh - RINK_HEIGHT) // 2  # Center it vertically too
+        OFFSET_Y = (sh - RINK_HEIGHT) // 2
 
-        # Calculate SAFE positions (180px up from bottom to avoid browser bars)
-        JOY_POS = (100, sh - 180)
-        FIRE_POS = (sw - 100, sh - 180)
+        # Change 75 to 100 to nudge them away from the screen edges
+        # This keeps them centered in the 150px side gutters
+        JOYSTICK_X = 100
+        FIRE_X = sw - 100
 
-        # Update your joystick's internal position to match
+        JOY_POS = (JOYSTICK_X, v_center)
+        FIRE_POS = (FIRE_X, v_center)
+
+        # 4. Sync Joystick
         joystick.base_pos = JOY_POS
         if not joystick.active:
             joystick.knob_pos = JOY_POS
@@ -263,16 +321,23 @@ async def main():  # async for WebAssembly
         # For now, let's say a touch on the right 20% of screen = Space
         touch_fire = False
         for event in event_list:
-            if event.type == pygame.FINGERDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-                # Use a distance check (like we did for the joystick)
-                f_pos = getattr(event, "pos", (0, 0))
-                # For pygbag/mobile, multiply normalized coords by screen size
+            # 2. Process SHOT Button
+            if event.type in (pygame.FINGERDOWN, pygame.MOUSEBUTTONDOWN):
+                # Scale touch to the current physical surface size
                 if hasattr(event, "x"):
-                    f_pos = (event.x * SCREEN_WIDTH, event.y * SCREEN_HEIGHT)
+                    f_pos = (event.x * sw, event.y * sh)
+                else:
+                    f_pos = event.pos
 
-                dist = math.hypot(f_pos[0] - fire_button_pos[0], f_pos[1] - fire_button_pos[1])
-                if dist < fire_button_radius:
+                # Distance check against the dynamic FIRE_POS from your loop
+                dist = math.hypot(f_pos[0] - FIRE_POS[0], f_pos[1] - FIRE_POS[1])
+
+                if dist < btn_radius:
                     mobile_fire_trigger = True
+                    is_firing = True  # Yellow light!
+
+            if event.type in (pygame.FINGERUP, pygame.MOUSEBUTTONUP):
+                is_firing = False
 
         if move_left and not move_up and not move_down:
             player_pos[0] -= player_speed
@@ -663,7 +728,7 @@ async def main():  # async for WebAssembly
             screen.fill(WHITE)
             # Draw the rectangle
             text2 = font2.render("HOCKY", True, BLACK)
-            text3 = font.render("Hit SPACE bar or punch FIRE to start!", True, BLACK)
+            text3 = font.render("Hit SPACE bar or tap SHOT to start!", True, BLACK)
             rect = pygame.Rect(rect_x, rect_y, 50, 50)
             prompt_rect = text3.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20))
             screen.blit(text2, rect)
@@ -679,7 +744,7 @@ async def main():  # async for WebAssembly
             fire_surf = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
             pygame.draw.circle(fire_surf, (255, 0, 0, 180), (btn_radius, btn_radius), btn_radius)
 
-            txt_surf = font.render("FIRE", True, (255, 255, 255))
+            txt_surf = font.render("SHOT", True, (255, 255, 255))
             txt_rect = txt_surf.get_rect(center=(btn_radius, btn_radius))
             fire_surf.blit(txt_surf, txt_rect)
 
@@ -702,24 +767,29 @@ async def main():  # async for WebAssembly
         # Puck
         pygame.draw.circle(screen, BLACK, (int(puck_pos[0] + OFFSET_X), int(puck_pos[1] + OFFSET_Y)), PUCK_RADIUS)
 
-        # --- DRAW VIRTUAL CONTROLS ---
-        # 1. Draw Joystick (The class now handles the circle, knob, and "MOVE" text)
+        # --- Inside the Game Loop ---
+        sw, sh = screen.get_size()
+        v_center = sh // 2
+        # Rink edges relative to the center of the screen
+        rink_edge_left = (sw - RINK_WIDTH) // 2
+        rink_edge_right = (sw + RINK_WIDTH) // 2
+
+        # Push to 100 px from edges to clear the 600px rink
+        joystick.base_pos = (100, v_center)
+        FIRE_POS = (sw - 100, v_center)
+
+        # Ensure the knob doesn't "ghost" when the finger is lifted
+        if not joystick.active:
+            joystick.knob_pos = joystick.base_pos
+
+        # 2. Draw Joystick
         joystick.draw(screen, font, "MOVE")
 
-        # 2. Draw Fire Button
-        btn_radius = 60
-        fire_surf = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
-        pygame.draw.circle(fire_surf, (255, 0, 0, 150), (btn_radius, btn_radius), btn_radius)
+        # Choose surface based on if it's currently pressed
+        current_surf = fire_surf_pressed if is_firing else fire_surf_normal
 
-        btn_label = "FIRE"
-
-        # Now render it
-        txt_surf = font.render(btn_label, True, (255, 255, 255))
-        txt_rect = txt_surf.get_rect(center=(btn_radius, btn_radius))
-        fire_surf.blit(txt_surf, txt_rect)
-
-        # Blit centered on the FIRE_POS
-        screen.blit(fire_surf, (FIRE_POS[0] - btn_radius, FIRE_POS[1] - btn_radius))
+        # Blit centered on FIRE_POS
+        screen.blit(current_surf, (FIRE_POS[0] - btn_radius, FIRE_POS[1] - btn_radius))
 
         # Update the display
         pygame.display.flip()
