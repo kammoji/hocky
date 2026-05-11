@@ -14,8 +14,10 @@ screen: pygame.Surface = None
 # Constants
 SCREEN_WIDTH, SCREEN_HEIGHT = 900, 400  # Width increased for control clearance
 RINK_WIDTH, RINK_HEIGHT = 600, 300
-WIDTH_MARGIN = SCREEN_WIDTH - RINK_WIDTH  # Now 300px total (150px per side)
+WIDTH_MARGIN = SCREEN_WIDTH - RINK_WIDTH
 HEIGHT_MARGIN = SCREEN_HEIGHT - RINK_HEIGHT
+OFFSET_X = WIDTH_MARGIN // 2
+OFFSET_Y = HEIGHT_MARGIN // 2
 PLAYER_RADIUS = 5
 PUCK_RADIUS = 4
 
@@ -23,6 +25,23 @@ PUCK_RADIUS = 4
 GOAL_HEIGHT = 50
 GOAL_TOP = (RINK_HEIGHT - GOAL_HEIGHT) // 2
 GOAL_BOTTOM = GOAL_TOP + GOAL_HEIGHT
+
+# Goalie Dimensions:
+# Crease / X-axis logic constants
+# Match player size (Radius 5 means Diameter 10)
+GOALIE_W = 10
+GOALIE_H = 20
+
+# Base X positions
+BLUE_GOAL_X = 5
+RED_GOAL_X = RINK_WIDTH - 5 - GOALIE_W
+
+# Vertical centering of goalies:
+GOALIE_START_Y = (RINK_HEIGHT // 2) - (GOALIE_H // 2)
+
+# How far they step out (adjusted for the smaller scale)
+CHALLENGE_DISTANCE = 20
+GOALIE_SPEED = 5
 
 # Rink Edges (Makes your bounce/goal code much cleaner)
 RINK_LEFT = 0
@@ -82,6 +101,51 @@ def goal(puck_pos, off_x, off_y):
     return False
 
 
+def update_goalies(blue_rect, red_rect, puck_pos, speed):
+    puck_x, puck_y = puck_pos[0], puck_pos[1]
+    midline = RINK_WIDTH // 2
+    goal_top = (RINK_HEIGHT - GOAL_HEIGHT) // 2
+    goal_bottom = goal_top + GOAL_HEIGHT
+
+    # --- BLUE GOALIE ---
+    if puck_x < midline:
+        # Vertical Tracking
+        dy = puck_y - blue_rect.centery
+        move_y = max(-GOALIE_SPEED, min(GOALIE_SPEED, dy * 0.2))
+        if move_y > 0 and blue_rect.bottom < goal_bottom:
+            blue_rect.y += move_y
+        elif move_y < 0 and blue_rect.top > goal_top:
+            blue_rect.y += move_y
+
+        # X-Axis Challenge (Moves forward based on puck proximity)
+        dist_pct = max(0, min(1, puck_x / (RINK_WIDTH / 2)))
+        blue_rect.x = BLUE_GOAL_X + (dist_pct * CHALLENGE_DISTANCE)
+    else:
+        # RESET: Puck is on Red's side, return to home
+        dy = (RINK_HEIGHT // 2) - blue_rect.centery
+        blue_rect.y += max(-GOALIE_SPEED, min(GOALIE_SPEED, dy * 0.1))
+        blue_rect.x = BLUE_GOAL_X
+
+    # --- RED GOALIE ---
+    if puck_x > midline:
+        # Vertical Tracking
+        dy = puck_y - red_rect.centery
+        move_y = max(-GOALIE_SPEED, min(GOALIE_SPEED, dy * 0.2))
+        if move_y > 0 and red_rect.bottom < goal_bottom:
+            red_rect.y += move_y
+        elif move_y < 0 and red_rect.top > goal_top:
+            red_rect.y += move_y
+
+        # X-Axis Challenge (Moves forward based on puck proximity)
+        dist_pct = max(0, min(1, (RINK_WIDTH - puck_x) / (RINK_WIDTH / 2)))
+        red_rect.x = RED_GOAL_X - (dist_pct * CHALLENGE_DISTANCE)
+    else:
+        # RESET: Puck is on Blue's side, return to home
+        dy = (RINK_HEIGHT // 2) - red_rect.centery
+        red_rect.y += max(-GOALIE_SPEED, min(GOALIE_SPEED, dy * 0.1))
+        red_rect.x = RED_GOAL_X
+
+
 class VirtualJoystick:
     def __init__(self, x, y, radius=50):
         self.base_pos = (x, y)
@@ -112,13 +176,6 @@ class VirtualJoystick:
                 # We use radius * 2 to give the user a larger "hit area" for their thumb
                 if math.hypot(pos[0] - self.base_pos[0], pos[1] - self.base_pos[1]) < self.radius * 2:
                     self.active = True
-                    # REMOVED: self.base_pos = pos (This was the cause of the jumping)
-            # OPTION B: Dynamic (Better for mobile)
-            # If touch is on the left 40% of the screen, snap joystick to finger
-            # if pos[0] < curr_w * 0.4:
-            #    self.active = True
-            #    self.base_pos = pos # This moves the base to where the finger is
-            #    self.knob_pos = pos
 
         # 3. Logic for UP
         elif event.type in (pygame.MOUSEBUTTONUP, pygame.FINGERUP):
@@ -163,6 +220,7 @@ pygame.init()
 async def main():  # async for WebAssembly
 
     global screen
+    global OFFSET_X, OFFSET_Y, BLUE_GOAL_X, RED_GOAL_X
     font = pygame.font.SysFont("Arial", 24)  # font init
 
     # Face the music!
@@ -174,6 +232,7 @@ async def main():  # async for WebAssembly
     SCREEN_WIDTH, SCREEN_HEIGHT = 1100, 600
     RINK_WIDTH, RINK_HEIGHT = 600, 300
     OFFSET_X = (SCREEN_WIDTH - RINK_WIDTH) // 2
+    OFFSET_Y = (SCREEN_HEIGHT - RINK_HEIGHT) // 2
     WIDTH_MARGIN, HEIGHT_MARGIN = SCREEN_WIDTH - RINK_WIDTH, SCREEN_HEIGHT - RINK_HEIGHT
     PLAYER_RADIUS = 5
     PUCK_RADIUS = 4
@@ -193,6 +252,12 @@ async def main():  # async for WebAssembly
     RED = (255, 0, 0)
     BLACK = (0, 0, 0)
 
+    # Create a surface that matches the full screen size
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    # Fill it with semi-transparent grey (RGB + Alpha)
+    # (100, 100, 100) is grey, 150 is the "greyness" level (0-255)
+    overlay.fill((100, 100, 100, 80))
+
     # START DEMO STUFF:
     DONE = False
 
@@ -211,6 +276,12 @@ async def main():  # async for WebAssembly
     opponent_pos = [RINK_WIDTH // 2 + 40, RINK_HEIGHT // 2, 10, 20]
     opponent_speed = 2
     opponent_heading = 270  # opponent heading in degrees
+
+    # Define goalie properties
+    # Initialize as small 10x20 squares (which we draw as circles/ellipses)
+    # Use W and H instead of SIZE, SIZE
+    blue_goalie_rect = pygame.Rect(BLUE_GOAL_X, GOALIE_START_Y, GOALIE_W, GOALIE_H)
+    red_goalie_rect = pygame.Rect(RED_GOAL_X, GOALIE_START_Y, GOALIE_W, GOALIE_H)
 
     # Define puck properties
     puck_pos = [RINK_WIDTH // 2, RINK_HEIGHT // 2]
@@ -253,7 +324,7 @@ async def main():  # async for WebAssembly
 
     # NORMAL State
     fire_surf_normal = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
-    pygame.draw.circle(fire_surf_normal, (200, 0, 0, 180), (btn_radius, btn_radius), btn_radius)
+    pygame.draw.circle(fire_surf_normal, (255, 0, 0, 180), (btn_radius, btn_radius), btn_radius)
 
     # PRESSED State
     fire_surf_pressed = pygame.Surface((btn_radius * 2, btn_radius * 2), pygame.SRCALPHA)
@@ -541,6 +612,30 @@ async def main():  # async for WebAssembly
                 # Give the user a brief pause without freezing the browser
                 await asyncio.sleep(1)
 
+        # Goalies move (tracking puck Y and challenging on X):
+        update_goalies(blue_goalie_rect, red_goalie_rect, puck_pos, GOALIE_SPEED)
+
+        # --- GOALIE SAVE LOGIC ---
+        for goalie in [blue_goalie_rect, red_goalie_rect]:
+            if goalie.collidepoint(puck_pos[0], puck_pos[1]):
+                PUCK_SLIDE = True  # Ensure the puck starts moving
+
+                # 1. REFLECT HEADING
+                # This reverses the X-direction (360 - heading)
+                # just like your left/right wall logic.
+                puck_slide_heading = (360 - puck_slide_heading) % 360
+
+                # 2. BOOST SPEED
+                # Makes it feel like a "rebound" rather than a limp hit
+                puck_slide_speed = max(puck_slide_speed, 4) * 1.1
+
+                # 3. SNAP PUCK OUT (Prevent sticking)
+                # If it hit the Blue (Left) goalie, push it right. Otherwise, push left.
+                if goalie == blue_goalie_rect:
+                    puck_pos[0] = goalie.right + 2
+                else:
+                    puck_pos[0] = goalie.left - 2
+
         # Opponent moves (towards puck):
         if puck_pos[0] > opponent_pos[0]:
             opponent_pos[0] += opponent_speed
@@ -582,11 +677,12 @@ async def main():  # async for WebAssembly
         # Ensure player and opponent stay within rink boundaries
         # --- 1. CLAMP PLAYER ---
         player_pos[0] = max(RINK_LEFT + PLAYER_RADIUS, min(RINK_RIGHT - PLAYER_RADIUS - 10, player_pos[0]))
-        player_pos[1] = max(RINK_TOP + PLAYER_RADIUS, min(RINK_BOTTOM - PLAYER_RADIUS - 20, player_pos[1]))
+        player_pos[1] = max(RINK_TOP + PLAYER_RADIUS, min(RINK_BOTTOM - PLAYER_RADIUS - 16, player_pos[1]))
 
         # --- 2. CLAMP OPPONENT ---
         opponent_pos[0] = max(RINK_LEFT + PLAYER_RADIUS, min(RINK_RIGHT - PLAYER_RADIUS - 10, opponent_pos[0]))
-        opponent_pos[1] = max(RINK_TOP + PLAYER_RADIUS, min(RINK_BOTTOM - PLAYER_RADIUS - 20, opponent_pos[1]))
+        # FIX: If the puck stick to the rink bottom this first version of opponent AI will get stuck trying to reach it:
+        opponent_pos[1] = max(RINK_TOP + PLAYER_RADIUS, min(RINK_BOTTOM - PLAYER_RADIUS - 16, opponent_pos[1]))
 
         # --- 3. CLAMP PUCK (With Goal Opening) ---
         # We ONLY clamp the Puck's X-position if it's NOT in front of the goal
@@ -611,7 +707,7 @@ async def main():  # async for WebAssembly
 
         # Score on top:
         font = pygame.font.Font("freesansbold.ttf", 28)
-        font2 = pygame.font.Font("freesansbold.ttf", 62)
+        font2 = pygame.font.Font("freesansbold.ttf", 74)
         text = font2.render(str(goals_blue) + " - " + str(goals_red), True, BLACK)
         score_rect = text.get_rect(center=(SCREEN_WIDTH / 2, 50))
         screen.blit(text, score_rect)
@@ -704,6 +800,8 @@ async def main():  # async for WebAssembly
                     dist = math.hypot(f_pos[0] - FIRE_POS[0], f_pos[1] - FIRE_POS[1])
                     if dist < 80:  # Made the hit-box slightly larger for easier tapping
                         start_trigger = True
+                        mobile_fire_trigger = True
+                        is_firing = True  # Yellow light!
 
                 # Common Start Logic
                 if "start_trigger" in locals() and start_trigger:
@@ -726,6 +824,20 @@ async def main():  # async for WebAssembly
                 rect_change_x = rect_change_x * -1
             # Clear the screen
             screen.fill(WHITE)
+
+            # 1. DRAW BACKGROUND (Greyed out section)
+            screen.fill(WHITE)
+            # Draw the rink border (Black line, width 3)
+            pygame.draw.polygon(screen, BLACK, rink_points, 3)
+
+            # Draw Goals (Centered automatically by OFFSET_Y)
+            pygame.draw.rect(screen, RED, [OFFSET_X - 5, OFFSET_Y + (RINK_HEIGHT - GOAL_HEIGHT) // 2, 5, GOAL_HEIGHT])
+            pygame.draw.rect(screen, RED, [OFFSET_X + RINK_WIDTH, OFFSET_Y + (RINK_HEIGHT - GOAL_HEIGHT) // 2, 5, GOAL_HEIGHT])
+
+            # 2. APPLY THE GREY OVERLAY
+            # This sits on top of the rink but below the UI
+            screen.blit(overlay, (0, 0))
+
             # Draw the rectangle
             text2 = font2.render("HOCKY", True, BLACK)
             text3 = font.render("Hit SPACE bar or tap SHOT to start!", True, BLACK)
@@ -746,10 +858,10 @@ async def main():  # async for WebAssembly
 
             txt_surf = font.render("SHOT", True, (255, 255, 255))
             txt_rect = txt_surf.get_rect(center=(btn_radius, btn_radius))
-            fire_surf.blit(txt_surf, txt_rect)
+            current_surf = fire_surf_pressed if is_firing else fire_surf_normal
 
             # Center the blit on our FIRE_POS
-            screen.blit(fire_surf, (FIRE_POS[0] - btn_radius, FIRE_POS[1] - btn_radius))
+            screen.blit(current_surf, (FIRE_POS[0] - btn_radius, FIRE_POS[1] - btn_radius))
 
             # Roll text!:
             pygame.display.flip()
@@ -763,6 +875,14 @@ async def main():  # async for WebAssembly
         # Red Player
         red_rect = [opponent_pos[0] + OFFSET_X, opponent_pos[1] + OFFSET_Y, opponent_pos[2], opponent_pos[3]]
         pygame.draw.ellipse(screen, RED, red_rect)
+
+        # Goalies:
+        blue_draw_rect = blue_goalie_rect.move(OFFSET_X, OFFSET_Y)
+        red_draw_rect = red_goalie_rect.move(OFFSET_X, OFFSET_Y)
+
+        # Draw the goalies as ellipses (with OFFSET applied)
+        pygame.draw.ellipse(screen, BLUE, blue_draw_rect)
+        pygame.draw.ellipse(screen, RED, red_draw_rect)
 
         # Puck
         pygame.draw.circle(screen, BLACK, (int(puck_pos[0] + OFFSET_X), int(puck_pos[1] + OFFSET_Y)), PUCK_RADIUS)
